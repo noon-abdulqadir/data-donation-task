@@ -350,7 +350,7 @@ class NetflixFlow(FlowBuilder):
                     description=props.Translatable({'en': '', 'nl': ''}),
                     questions=[
                         d3i_props.PropsUIQuestionOpen(
-                            id=1,
+                            id='open_question_1',
                             question=question_text
                         )
                     ],
