@@ -12,6 +12,7 @@ import port.helpers.port_helpers as ph
 
 
 # Registry: platform display name → (module path, class name)
+# Commented out to use Netflix only
 PLATFORM_REGISTRY = [
     # ("LinkedIn", "port.platforms.linkedin", "LinkedInFlow"),
     # ("Instagram", "port.platforms.instagram", "InstagramFlow"),

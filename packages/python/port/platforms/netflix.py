@@ -8,24 +8,19 @@ It handles DDPs in the English language with filetype CSV.
 Netflix DDPs may have files nested under a numeric user ID prefix directory.
 """
 import logging
+import random
 from collections import Counter
 
 import pandas as pd
-
-import port.api.props as props
 import port.api.d3i_props as d3i_props
-from port.api.d3i_props import ExtractionResult
+import port.api.props as props
 import port.helpers.extraction_helpers as eh
-import port.helpers.validate as validate
 import port.helpers.port_helpers as ph
+import port.helpers.validate as validate
+from port.api.d3i_props import ExtractionResult
 from port.helpers.extraction_helpers import ZipArchiveReader
 from port.helpers.flow_builder import FlowBuilder
-
-from port.helpers.validate import (
-    DDPCategory,
-    DDPFiletype,
-    Language,
-)
+from port.helpers.validate import DDPCategory, DDPFiletype, Language
 
 logger = logging.getLogger(__name__)
 
@@ -297,6 +292,7 @@ def extraction(reader: ZipArchiveReader, selected_user: str) -> ExtractionResult
 class NetflixFlow(FlowBuilder):
     def __init__(self, session_id: str):
         super().__init__(session_id, "Netflix")
+        self.titles_for_questionnaire: dict[str, list[str]] = {'selected_user': '', 'titles': []}
 
     def validate_file(self, file):
         return validate.validate_zip(DDP_CATEGORIES, file)
@@ -309,7 +305,8 @@ class NetflixFlow(FlowBuilder):
 
         if len(users) == 1:
             selected_user = users[0]
-            return extraction(reader, selected_user)
+
+            # return extraction(reader, selected_user)
         elif len(users) > 1:
             title = props.Translatable({
                 "en": "Select your Netflix profile name",
@@ -319,7 +316,56 @@ class NetflixFlow(FlowBuilder):
             radio_prompt = ph.generate_radio_prompt(title, empty_text, users)
             selection = yield ph.render_page(empty_text, radio_prompt)
             selected_user = selection.value
-            return extraction(reader, selected_user)
+            # return extraction(reader, selected_user)
+
+        # Save a list of titles here for questionnaire later
+        results = extraction(reader, selected_user)
+
+        for table in results.tables:
+            if table.id == "netflix_viewing_activity":
+                titles = table.data_frame["Title"].unique().tolist()
+                self.titles_for_questionnaire['selected_user'] = selected_user
+                self.titles_for_questionnaire['titles'] = titles
+
+        return results
+
+    def post_donate_flow(self):
+        """Run the recall questionnaire after successful donation."""
+        yield from self.open_ended_questionnaire()
+
+    # Netflix-only open-ended question about randomly picked title watched by user
+    def open_ended_questionnaire(self):
+        try:
+            if self.titles_for_questionnaire['titles']:
+                title = random.choice(
+                    self.titles_for_questionnaire['titles']
+                )
+
+                question_text = props.Translatable({
+                    'en': f'What do you remember about watching {title}?',
+                    'nl': f'Wat herinner je je van het kijken naar {title}?',
+                })
+
+                questionnaire = d3i_props.PropsUIPromptQuestionnaire(
+                    description=props.Translatable({'en': '', 'nl': ''}),
+                    questions=[
+                        d3i_props.PropsUIQuestionOpen(
+                            id=1,
+                            question=question_text
+                        )
+                    ],
+                )
+
+                result = yield ph.render_page(
+                    props.Translatable({'en': '', 'nl': ''}),
+                    questionnaire,
+                )
+
+                if result.__type__ == 'PayloadJSON':
+                    yield ph.donate(f'{self.session_id}-netflix-recall', result.value)
+
+        except Exception as e:
+            logger.error('open_ended_questionnaire error: %s', e)
 
 
 def process(session_id):

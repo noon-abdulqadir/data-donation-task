@@ -4,16 +4,16 @@ Subclass this to implement a platform-specific donation flow.
 Override validate_file() and extract_data(). Call start_flow()
 as a generator from script.py via `yield from`.
 """
-from abc import abstractmethod
-from collections.abc import Generator
 import json
 import logging
+from abc import abstractmethod
+from collections.abc import Generator
 
-import port.api.props as props
 import port.api.d3i_props as d3i_props
+import port.api.props as props
 import port.helpers.port_helpers as ph
-import port.helpers.validate as validate
 import port.helpers.uploads as uploads
+import port.helpers.validate as validate
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +47,8 @@ class FlowBuilder:
 
     def start_flow(self):
         """Main per-platform flow: file→materialize→safety→validate→retry→extract→consent→donate.
+
+        # Adding post-donation questionnaire
 
         This is a generator. script.py calls it via `yield from flow.start_flow()`.
         Control flow rules:
@@ -161,6 +163,8 @@ class FlowBuilder:
             return
 
         yield from ph.emit_log("info", f"[{self.platform_name}] Donation result: success")
+        # Netflix-only post-donation flow for open-ended questionnaire about titles watched
+        yield from self.post_donate_flow()
 
     # Methods to be overridden by platform-specific implementations
     def generate_file_prompt(self):
@@ -187,3 +191,9 @@ class FlowBuilder:
             description=self.UI_TEXT["review_data_description"],
             table_list=table_list,
         )
+
+    # Add Netflix-only post-donation flow for open-ended questionnaire about titles watched
+    def post_donate_flow(self):
+        """Post-donation flow for Netflix-only open-ended questionnaire."""
+        return
+        yield
