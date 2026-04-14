@@ -7,6 +7,7 @@ Assumptions:
 It handles DDPs in the English language with filetype CSV.
 Netflix DDPs may have files nested under a numeric user ID prefix directory.
 """
+import json
 import logging
 import random
 from collections import Counter
@@ -350,7 +351,7 @@ class NetflixFlow(FlowBuilder):
                     description=props.Translatable({'en': '', 'nl': ''}),
                     questions=[
                         d3i_props.PropsUIQuestionOpen(
-                            id=f"{self.session_id}|{title}",
+                            id="netflix_recall",
                             question=question_text
                         )
                     ],
@@ -362,7 +363,13 @@ class NetflixFlow(FlowBuilder):
                 )
 
                 if result.__type__ == 'PayloadJSON':
-                    yield ph.donate(f'{self.session_id}-netflix-recall', result.value)
+                    answers = json.loads(result.value)
+                    donation = json.dumps({
+                        "session_id": self.session_id,
+                        "Title": title,
+                        "Open-ended Answer": answers.get("netflix_recall", ""),
+                    })
+                    yield ph.donate(f'{self.session_id}-netflix-recall', donation)
 
         except Exception as e:
             logger.error('open_ended_questionnaire error: %s', e)
