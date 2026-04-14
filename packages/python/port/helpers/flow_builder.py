@@ -164,7 +164,9 @@ class FlowBuilder:
 
         yield from ph.emit_log("info", f"[{self.platform_name}] Donation result: success")
         # Netflix-only post-donation flow for open-ended questionnaire about titles watched
-        yield from self.post_donate_flow()
+        post_flow = self.post_donate_flow()
+        if post_flow is not None:
+            yield from post_flow
 
     # Methods to be overridden by platform-specific implementations
     def generate_file_prompt(self):
@@ -195,5 +197,4 @@ class FlowBuilder:
     # Add Netflix-only post-donation flow for open-ended questionnaire about titles watched
     def post_donate_flow(self):
         """Post-donation flow for Netflix-only open-ended questionnaire."""
-        return
-        yield
+        pass

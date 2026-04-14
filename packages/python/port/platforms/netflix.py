@@ -332,7 +332,7 @@ class NetflixFlow(FlowBuilder):
 
     def post_donate_flow(self):
         """Run the recall questionnaire after successful donation."""
-        yield from self.open_ended_questionnaire()
+        return self.open_ended_questionnaire()
 
     # Netflix-only open-ended question about randomly picked title watched by user
     def open_ended_questionnaire(self):
@@ -366,7 +366,7 @@ class NetflixFlow(FlowBuilder):
                     answers = json.loads(result.value)
                     donation = json.dumps({
                         "session_id": self.session_id,
-                        "Title": title,
+                        "Title Name": title,
                         "Open-ended Answer": answers.get("netflix_recall", ""),
                     })
                     yield ph.donate(f'{self.session_id}-netflix-recall', donation)
