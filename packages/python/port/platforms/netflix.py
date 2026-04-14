@@ -7,7 +7,6 @@ Assumptions:
 It handles DDPs in the English language with filetype CSV.
 Netflix DDPs may have files nested under a numeric user ID prefix directory.
 """
-import json
 import logging
 import random
 from collections import Counter
@@ -293,10 +292,19 @@ def extraction(reader: ZipArchiveReader, selected_user: str) -> ExtractionResult
 class NetflixFlow(FlowBuilder):
     def __init__(self, session_id: str):
         super().__init__(session_id, "Netflix")
-        self.titles_for_questionnaire: dict[str, list[str]] = {'selected_user': '', 'titles': []}
+        self.titles_for_questionnaire: list[str] = []
 
     def validate_file(self, file):
         return validate.validate_zip(DDP_CATEGORIES, file)
+
+    def extract_titles_list(self, results: ExtractionResult):
+        try:
+            for table in results.tables:
+                if table.id == "netflix_viewing_activity" and not table.data_frame.empty:
+                    self.titles_for_questionnaire = table.data_frame["Title"].dropna().unique().tolist()
+
+        except Exception as e:
+            logger.error("Error extracting title for questionnaire: %s", e)
 
     def extract_data(self, file, validation):
         errors = Counter()
@@ -322,57 +330,59 @@ class NetflixFlow(FlowBuilder):
         # Save a list of titles here for questionnaire later
         results = extraction(reader, selected_user)
 
-        for table in results.tables:
-            if table.id == "netflix_viewing_activity":
-                titles = table.data_frame["Title"].unique().tolist()
-                self.titles_for_questionnaire['selected_user'] = selected_user
-                self.titles_for_questionnaire['titles'] = titles
+        self.extract_titles_list(results)
 
         return results
+
+    # Netflix-only open-ended question about randomly picked title watched by user
+    # Function based on generate_questionnaire in port_helpers.py
+    def get_title_for_questionnaire(self) -> str | None:
+        try:
+            if self.titles_for_questionnaire:
+                return random.choice(self.titles_for_questionnaire)
+        except Exception as e:
+            logger.error("get_title_for_questionnaire error: %s", e)
+
+
+    def open_ended_questionnaire(self):
+        try:
+            title = self.get_title_for_questionnaire()
+            if not title:
+                return
+            questionnaire = ph.generate_questionnaire()
+            questionnaire.description = props.Translatable({
+                'en': "We'd like to ask you about a title from your viewing history.",
+                'nl': "We willen u vragen naar een titel uit uw kijkgeschiedenis.",
+            })
+            questionnaire.questions = [
+                d3i_props.PropsUIQuestionOpen(
+                    id="netflix_recall",
+                    question=props.Translatable({
+                        'en': f'What do you remember about watching {title}?',
+                        'nl': f'Wat herinner je je van het kijken naar {title}?',
+                    })
+                )
+            ]
+            result = yield ph.render_page(
+                props.Translatable({'en': 'Open ended question', 'nl': 'Open vraag'}),
+                questionnaire,
+            )
+
+            answers = pd.read_json(result.value, typ='series')
+            df = pd.DataFrame([{
+                'session_id': self.session_id,
+                'Title': title,
+                'Open-ended Answer': answers.get('netflix_recall', ''),
+            }])
+            yield ph.donate(f'{self.session_id}-netflix-recall', df.to_json())
+
+        except Exception as e:
+            logger.error('open_ended_questionnaire error: %s', e)
+
 
     def post_donate_flow(self):
         """Run the recall questionnaire after successful donation."""
         return self.open_ended_questionnaire()
-
-    # Netflix-only open-ended question about randomly picked title watched by user
-    def open_ended_questionnaire(self):
-        try:
-            if self.titles_for_questionnaire['titles']:
-                title = random.choice(
-                    self.titles_for_questionnaire['titles']
-                )
-
-                question_text = props.Translatable({
-                    'en': f'What do you remember about watching {title}?',
-                    'nl': f'Wat herinner je je van het kijken naar {title}?',
-                })
-
-                questionnaire = d3i_props.PropsUIPromptQuestionnaire(
-                    description=props.Translatable({'en': '', 'nl': ''}),
-                    questions=[
-                        d3i_props.PropsUIQuestionOpen(
-                            id="netflix_recall",
-                            question=question_text
-                        )
-                    ],
-                )
-
-                result = yield ph.render_page(
-                    props.Translatable({'en': '', 'nl': ''}),
-                    questionnaire,
-                )
-
-                if result.__type__ == 'PayloadJSON':
-                    answers = json.loads(result.value)
-                    donation = json.dumps({
-                        "session_id": self.session_id,
-                        "Title Name": title,
-                        "Open-ended Answer": answers.get("netflix_recall", ""),
-                    })
-                    yield ph.donate(f'{self.session_id}-netflix-recall', donation)
-
-        except Exception as e:
-            logger.error('open_ended_questionnaire error: %s', e)
 
 
 def process(session_id):
